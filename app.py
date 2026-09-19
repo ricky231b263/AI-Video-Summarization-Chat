@@ -2,12 +2,13 @@
 Streamlit UI for the AI Video Assistant.
 
 Drop this file in the project root (same level as main.py) and run:
-    streamlit run app.py
+    python -m streamlit run app.py
 
 Reuses all your existing core/ and utils/ modules — no pipeline logic
 is duplicated here, this file is purely the UI layer.
 """
 
+import os
 import uuid
 from dotenv import load_dotenv
 load_dotenv()  # must come before any core/ or utils/ import
@@ -31,7 +32,6 @@ def init_state():
         "session_id": str(uuid.uuid4())[:8],
         "result": None,
         "chat_history": [],
-        "processing": False,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -90,75 +90,69 @@ def run_pipeline(source: str, language: str, progress_cb):
     }
 
 
-# ---------- Sidebar ----------
+# ---------- Header ----------
+st.title("🎬 AI Video Summarizer & Chat")
+st.caption("Transcribe, summarize, and chat with any YouTube video or local file — English & Hinglish supported.")
+
+st.divider()
+
+# ---------- Settings (sidebar — secondary controls only) ----------
 with st.sidebar:
-    st.title("🎬 AI Video Summarizer & Chat")
-    st.caption("Transcribe, summarize, and chat with any video.")
-
-    st.divider()
-
-    source = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
-
-    uploaded_file = st.file_uploader("...or upload a local audio/video file", type=None)
-
+    st.header("⚙️ Settings")
     language = st.selectbox(
         "Language",
-        options=["hindi", "english", "auto"],
+        options=["hinglish", "english", "auto"],
         index=0,
         help="hinglish → Sarvam AI · english → local Whisper · auto → detect per chunk",
     )
-
-    process_clicked = st.button("Process video", type="primary", use_container_width=True)
-
     if st.session_state.result:
         st.divider()
         if st.button("🔄 Start a new video", use_container_width=True):
             reset_session()
             st.rerun()
 
+# ---------- Main input area (always visible, not hidden) ----------
+if st.session_state.result is None:
+    source = st.text_input(
+        "YouTube URL",
+        placeholder="https://www.youtube.com/watch?v=...",
+    )
+
+    uploaded_file = st.file_uploader("...or upload a local audio/video file", type=None)
+
+    process_clicked = st.button("▶ Process video", type="primary", use_container_width=True)
+
+    if process_clicked:
+        if uploaded_file is None and not source.strip():
+            st.error("Enter a YouTube URL or upload a file first.")
+        else:
+            input_source = source.strip()
+            if uploaded_file is not None:
+                temp_upload_path = f"downloads/upload_{st.session_state.session_id}_{uploaded_file.name}"
+                os.makedirs("downloads", exist_ok=True)
+                with open(temp_upload_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                input_source = temp_upload_path
+
+            progress_bar = st.progress(0, text="Starting...")
+
+            def progress_cb(msg, pct):
+                progress_bar.progress(pct, text=msg)
+
+            try:
+                st.session_state.result = run_pipeline(input_source, language, progress_cb)
+                st.session_state.chat_history = []
+                progress_bar.empty()
+                st.rerun()
+            except Exception as e:
+                progress_bar.empty()
+                st.error(f"Pipeline failed: {e}")
 
 
-# ---------- Handle processing ----------
-if process_clicked:
-    if uploaded_file is None and not source.strip():
-        st.sidebar.error("Enter a YouTube URL or upload a file first.")
-    else:
-        reset_session()  # clear any previous video's state/vector store first
-
-        input_source = source.strip()
-        temp_upload_path = None
-
-        if uploaded_file is not None:
-            # session-scoped filename avoids collisions if multiple people
-            # use a deployed instance of this app at once
-            temp_upload_path = f"downloads/upload_{st.session_state.session_id}_{uploaded_file.name}"
-            import os
-            os.makedirs("downloads", exist_ok=True)
-            with open(temp_upload_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            input_source = temp_upload_path
-
-        progress_bar = st.progress(0, text="Starting...")
-
-        def progress_cb(msg, pct):
-            progress_bar.progress(pct, text=msg)
-
-        try:
-            st.session_state.result = run_pipeline(input_source, language, progress_cb)
-            st.session_state.chat_history = []
-            progress_bar.empty()
-            st.rerun()
-        except Exception as e:
-            progress_bar.empty()
-            st.error(f"Pipeline failed: {e}")
-
-
-# ---------- Main content ----------
+# ---------- Results ----------
 result = st.session_state.result
 
-if result is None:
-    st.info("👈 Enter a YouTube URL or upload a file, then click **Process video** to get started.")
-else:
+if result:
     st.header(f"🔴 {result['title']}")
 
     tab_summary, tab_actions, tab_decisions, tab_questions, tab_transcript, tab_chat = st.tabs(
