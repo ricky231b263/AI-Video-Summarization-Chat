@@ -96,7 +96,7 @@ with col1:
     uploaded_file = st.file_uploader("Upload audio/video file", type=None)
 
 with col2:
-    language = st.selectbox("🌐 Language", ["hinglish","english","auto"])
+    language = st.selectbox("🌐 Language", ["hindi","english","auto"])
     process_clicked = st.button("▶ Process Video", type="primary", use_container_width=True)
     if st.session_state.result:
         if st.button("🔄 New Video", use_container_width=True):
