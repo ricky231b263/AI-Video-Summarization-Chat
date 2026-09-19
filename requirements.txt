@@ -2,10 +2,11 @@
 yt-dlp>=2024.4.9
 pydub>=0.25.1
 ffmpeg-python>=0.2.0
+audioop-lts>=0.2.1                # restores audioop for Python 3.13+ (pydub dependency)
 
 # — Speech-to-Text —
-faster-whisper>=1.0.0             # local Whisper (English)
-requests>=2.31.0                  # Sarvam AI STT (Hinglish) — called directly via REST API
+faster-whisper>=1.0.0
+requests>=2.31.0
 
 # — LLM Orchestration (Ollama) —
 langchain>=0.2.0
