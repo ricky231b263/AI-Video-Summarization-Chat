@@ -1,9 +1,24 @@
+"""
+Streamlit UI for the AI Video Assistant.
+
+Drop this file in the project root (same level as main.py) and run:
+    python -m streamlit run app.py
+"""
+
 import os
 import uuid
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv()  # must come before any core/ or utils/ import
 
 import streamlit as st
+
+# If a YTDLP_COOKIES secret is set (Manage app -> Settings -> Secrets),
+# write it to cookies.txt so audio_processor.py can pick it up automatically.
+# This is optional — the app works without it, just less reliably for
+# videos YouTube is currently blocking anonymous/cloud requests for.
+if "YTDLP_COOKIES" in st.secrets and not os.path.exists("cookies.txt"):
+    with open("cookies.txt", "w") as f:
+        f.write(st.secrets["YTDLP_COOKIES"])
 
 from utils.audio_processor import process_input, cleanup_files
 from core.transcriber import transcribe_all
@@ -12,7 +27,117 @@ from core.extractor import extract_all
 from core.rag_engine import build_rag_chain, ask_question
 from core.vector_store import delete_vector_store
 
+
 st.set_page_config(page_title="AI Video Summarizer & Chat", page_icon="🎬", layout="wide")
+
+
+# =====================================================================
+# STYLING
+# =====================================================================
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
+
+    html, body, [class*="css"]  {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .hero {
+        background: linear-gradient(135deg, #6D28D9 0%, #DB2777 100%);
+        padding: 1.8rem 1.6rem;
+        border-radius: 18px;
+        margin-bottom: 1.4rem;
+        box-shadow: 0 8px 24px rgba(109, 40, 217, 0.25);
+    }
+    .hero h1 {
+        font-family: 'Poppins', sans-serif;
+        color: white;
+        font-size: 1.9rem;
+        margin: 0 0 0.3rem 0;
+    }
+    .hero p {
+        color: rgba(255,255,255,0.9);
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    .input-card {
+        background: var(--background-color, #ffffff);
+        border: 1px solid rgba(128,128,128,0.15);
+        border-radius: 16px;
+        padding: 1.4rem;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        margin-bottom: 1.2rem;
+    }
+
+    .stButton > button {
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        padding: 0.6rem 1.2rem !important;
+        border: none !important;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #6D28D9 0%, #DB2777 100%) !important;
+        box-shadow: 0 4px 14px rgba(109, 40, 217, 0.35);
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(109, 40, 217, 0.3);
+    }
+
+    .result-title {
+        background: linear-gradient(135deg, rgba(109,40,217,0.08) 0%, rgba(219,39,119,0.08) 100%);
+        border-left: 4px solid #DB2777;
+        border-radius: 10px;
+        padding: 1rem 1.2rem;
+        margin-bottom: 1.2rem;
+    }
+    .result-title h2 {
+        margin: 0;
+        font-family: 'Poppins', sans-serif;
+        font-size: 1.35rem;
+        word-break: break-word;
+    }
+
+    .content-card {
+        background: var(--background-color, #ffffff);
+        border: 1px solid rgba(128,128,128,0.15);
+        border-radius: 14px;
+        padding: 1.2rem 1.4rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+        line-height: 1.65;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px 10px 0 0;
+        padding: 8px 14px;
+        font-weight: 600;
+    }
+
+    .badge {
+        display: inline-block;
+        background: rgba(109,40,217,0.12);
+        color: #6D28D9;
+        padding: 3px 12px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-right: 6px;
+    }
+
+    @media (max-width: 640px) {
+        .hero h1 { font-size: 1.5rem; }
+        .hero p { font-size: 0.9rem; }
+        .block-container { padding-left: 1rem; padding-right: 1rem; }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # ---------- Session state ----------
 def init_state():
@@ -25,7 +150,9 @@ def init_state():
         if key not in st.session_state:
             st.session_state[key] = val
 
+
 init_state()
+
 
 def reset_session():
     if st.session_state.result:
@@ -35,6 +162,7 @@ def reset_session():
             pass
     st.session_state.result = None
     st.session_state.chat_history = []
+
 
 # ---------- Pipeline runner ----------
 def run_pipeline(source: str, language: str, progress_cb):
@@ -73,113 +201,120 @@ def run_pipeline(source: str, language: str, progress_cb):
         "rag_chain": rag_chain,
     }
 
-# ---------- Hero Header ----------
-st.markdown(
-    """
-    <div style="background:linear-gradient(90deg,#ff4b1f,#1fddff);
-                padding:25px;border-radius:12px;text-align:center;margin-bottom:20px;">
-        <h1 style="color:white;">🎬 AI Video Summarizer & Chat</h1>
-        <p style="color:white;font-size:18px;">
-            Transcribe, summarize & chat with any video — fast & fun!
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
 
-# ---------- Input Area ----------
-st.markdown("### 📥 Input")
-col1, col2 = st.columns([2,1])
+# =====================================================================
+# HERO HEADER
+# =====================================================================
+st.markdown("""
+<div class="hero">
+    <h1>🎬 AI Video Summarizer & Chat</h1>
+    <p>Transcribe, summarize, and chat with any YouTube video or local file — English & Hinglish supported.</p>
+</div>
+""", unsafe_allow_html=True)
 
-with col1:
-    source = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
-    uploaded_file = st.file_uploader("Upload audio/video file", type=None)
 
-with col2:
-    language = st.selectbox("🌐 Language", ["hindi","english","auto"])
-    process_clicked = st.button("▶ Process Video", type="primary", use_container_width=True)
-    if st.session_state.result:
-        if st.button("🔄 New Video", use_container_width=True):
-            reset_session()
-            st.rerun()
+# =====================================================================
+# MAIN INPUT AREA
+# =====================================================================
+if st.session_state.result is None:
+    st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
-# ---------- Run pipeline ----------
-if process_clicked:
-    if uploaded_file is None and not source.strip():
-        st.error("Enter a YouTube URL or upload a file first.")
-    else:
-        input_source = source.strip()
-        if uploaded_file is not None:
-            temp_upload_path = f"downloads/upload_{st.session_state.session_id}_{uploaded_file.name}"
-            os.makedirs("downloads", exist_ok=True)
-            with open(temp_upload_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            input_source = temp_upload_path
+    language = st.selectbox(
+        "⚙️ Language",
+        options=["hinglish", "english", "auto"],
+        index=0,
+        help="hinglish → Sarvam AI · english → local Whisper · auto → detect per chunk",
+    )
 
-        progress_bar = st.progress(0, text="Starting...")
+    source = st.text_input(
+        "🔗 YouTube URL",
+        placeholder="https://www.youtube.com/watch?v=...",
+    )
 
-        def progress_cb(msg, pct):
-            progress_bar.progress(pct, text=msg)
+    uploaded_file = st.file_uploader("📁 ...or upload a local audio/video file", type=None)
 
-        try:
-            st.session_state.result = run_pipeline(input_source, language, progress_cb)
-            st.session_state.chat_history = []
-            progress_bar.empty()
-            st.rerun()
-        except Exception as e:
-            progress_bar.empty()
-            st.error(f"Pipeline failed: {e}")
+    process_clicked = st.button("▶  Process video", type="primary", use_container_width=True)
 
-# ---------- Results ----------
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if process_clicked:
+        if uploaded_file is None and not source.strip():
+            st.error("Enter a YouTube URL or upload a file first.")
+        else:
+            input_source = source.strip()
+            if uploaded_file is not None:
+                temp_upload_path = f"downloads/upload_{st.session_state.session_id}_{uploaded_file.name}"
+                os.makedirs("downloads", exist_ok=True)
+                with open(temp_upload_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                input_source = temp_upload_path
+
+            progress_bar = st.progress(0, text="Starting...")
+
+            def progress_cb(msg, pct):
+                progress_bar.progress(pct, text=msg)
+
+            try:
+                st.session_state.result = run_pipeline(input_source, language, progress_cb)
+                st.session_state.chat_history = []
+                progress_bar.empty()
+                st.rerun()
+            except Exception as e:
+                progress_bar.empty()
+                st.error(f"Pipeline failed: {e}")
+
+else:
+    if st.button("🔄 Start a new video"):
+        reset_session()
+        st.rerun()
+
+
+# =====================================================================
+# RESULTS
+# =====================================================================
 result = st.session_state.result
 
 if result:
-    st.markdown(f"## 🔴 {result['title']}")
+    st.markdown(f"""
+    <div class="result-title">
+        <span class="badge">🔴 Analyzed</span>
+        <h2>{result['title']}</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
     tab_summary, tab_actions, tab_decisions, tab_questions, tab_transcript, tab_chat = st.tabs(
         ["📝 Summary", "✅ Actions", "🔑 Decisions", "❓ Questions", "📄 Transcript", "💬 Chat"]
     )
 
-    def card(content, color):
-        st.markdown(
-            f"<div style='background:{color};padding:15px;border-radius:10px;margin-bottom:10px;'>{content}</div>",
-            unsafe_allow_html=True
-        )
-
     with tab_summary:
-        card(result["summary"], "#f0f8ff")
+        st.markdown(f'<div class="content-card">{result["summary"]}</div>', unsafe_allow_html=True)
 
     with tab_actions:
-        card(result["action_items"], "#e6ffe6")
+        st.markdown(f'<div class="content-card">{result["action_items"]}</div>', unsafe_allow_html=True)
 
     with tab_decisions:
-        card(result["key_decisions"], "#fff0f5")
+        st.markdown(f'<div class="content-card">{result["key_decisions"]}</div>', unsafe_allow_html=True)
 
     with tab_questions:
-        card(result["open_questions"], "#ffffe0")
+        st.markdown(f'<div class="content-card">{result["open_questions"]}</div>', unsafe_allow_html=True)
 
     with tab_transcript:
-        st.text_area("Full transcript", result["transcript"], height=400)
+        st.text_area("Full transcript", result["transcript"], height=400, label_visibility="collapsed")
 
     with tab_chat:
         for msg in st.session_state.chat_history:
-            bg = "#d1f0ff" if msg["role"]=="assistant" else "#fce4ec"
-            st.markdown(
-                f"<div style='background:{bg};padding:10px;border-radius:8px;margin-bottom:5px;'>{msg['content']}</div>",
-                unsafe_allow_html=True
-            )
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
         question = st.chat_input("Ask something about this video...")
         if question:
             st.session_state.chat_history.append({"role": "user", "content": question})
-            st.markdown(
-                f"<div style='background:#fce4ec;padding:10px;border-radius:8px;margin-bottom:5px;'>{question}</div>",
-                unsafe_allow_html=True
-            )
-            with st.spinner("Thinking..."):
-                answer = ask_question(result["rag_chain"], question)
-            st.markdown(
-                f"<div style='background:#d1f0ff;padding:10px;border-radius:8px;margin-bottom:5px;'>{answer}</div>",
-                unsafe_allow_html=True
-            )
-            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+            with st.chat_message("user"):
+                st.markdown(question)
 
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    answer = ask_question(result["rag_chain"], question)
+                st.markdown(answer)
+
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
