@@ -5,6 +5,7 @@ import os
 DOWNLOAD_DIR = 'downloads'
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+
 def download_youtube_audio(url: str) -> str:
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
     ydl_opts = {
@@ -14,11 +15,18 @@ def download_youtube_audio(url: str) -> str:
             {"key": "FFmpegExtractAudio", "preferredcodec": "wav", "preferredquality": "192"}
         ],
         "quiet": True,
+        # Forcing the android/web clients often avoids the 403 errors caused
+        # by YouTube's signature/player changes and stricter blocking of
+        # requests coming from cloud/datacenter IPs (e.g. Streamlit Cloud).
+        "extractor_args": {
+            "youtube": {"player_client": ["android", "web"]}
+        },
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         base, _ = os.path.splitext(ydl.prepare_filename(info))
         return base + ".wav"
+
 
 def convert_to_wav(input_path: str) -> str:
     """Convert any audio/video files to Wav format using pydub."""
