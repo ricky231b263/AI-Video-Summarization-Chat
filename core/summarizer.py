@@ -1,9 +1,8 @@
 import os
 from dotenv import load_dotenv
-
 load_dotenv()
 
-from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,9 +10,10 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 
 def get_llm():
-    return ChatOllama(
-        model="llama3.2",
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
         temperature=0.2,
+        api_key=os.getenv("GROQ_API_KEY"),
     )
 
 
