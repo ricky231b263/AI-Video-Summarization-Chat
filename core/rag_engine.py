@@ -1,5 +1,8 @@
 import os
-from langchain_ollama import ChatOllama
+from dotenv import load_dotenv
+load_dotenv()
+
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
@@ -7,7 +10,11 @@ from core.vector_store import build_vector_store, load_vector_store, get_retriev
 
 
 def get_llm():
-    return ChatOllama(model="llama3.2", temperature=0.3)
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=0.3,
+        api_key=os.getenv("GROQ_API_KEY"),
+    )
 
 
 def format_docs(docs):
@@ -51,7 +58,7 @@ def build_rag_chain(transcript: str):
     return _build_chain(vector_store)
 
 
-def load_rag_chain(transcript: str):        # ← changed: now takes transcript
+def load_rag_chain(transcript: str):
     vector_store = load_vector_store(transcript)
     return _build_chain(vector_store)
 
