@@ -1,4 +1,10 @@
-from langchain_ollama import ChatOllama
+# Actionable items, decisions, questions — combined into a single LLM pass
+
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
@@ -6,7 +12,11 @@ import re
 
 
 def get_llm():
-    return ChatOllama(model="llama3.2", temperature=0.2)
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=0.2,
+        api_key=os.getenv("GROQ_API_KEY"),
+    )
 
 
 def build_chain(system_prompt: str):
