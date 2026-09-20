@@ -6,6 +6,7 @@ Drop this file in the project root (same level as main.py) and run:
 """
 
 import os
+import json
 import uuid
 from dotenv import load_dotenv
 load_dotenv()  # must come before any core/ or utils/ import
@@ -14,8 +15,6 @@ import streamlit as st
 
 # If a YTDLP_COOKIES secret is set (Manage app -> Settings -> Secrets),
 # write it to cookies.txt so audio_processor.py can pick it up automatically.
-# This is optional — the app works without it, just less reliably for
-# videos YouTube is currently blocking anonymous/cloud requests for.
 if "YTDLP_COOKIES" in st.secrets and not os.path.exists("cookies.txt"):
     with open("cookies.txt", "w") as f:
         f.write(st.secrets["YTDLP_COOKIES"])
@@ -27,6 +26,7 @@ from core.extractor import extract_all
 from core.rag_engine import build_rag_chain, ask_question
 from core.vector_store import delete_vector_store
 
+SAMPLE_VIDEO_PATH = "sample_data/sample_video.json"
 
 st.set_page_config(page_title="AI Video Summarizer & Chat", page_icon="🎬", layout="wide")
 
@@ -130,6 +130,11 @@ st.markdown("""
         margin-right: 6px;
     }
 
+    .sample-badge {
+        background: rgba(16,185,129,0.12);
+        color: #059669;
+    }
+
     @media (max-width: 640px) {
         .hero h1 { font-size: 1.5rem; }
         .hero p { font-size: 0.9rem; }
@@ -145,6 +150,7 @@ def init_state():
         "session_id": str(uuid.uuid4())[:8],
         "result": None,
         "chat_history": [],
+        "is_sample": False,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -155,16 +161,17 @@ init_state()
 
 
 def reset_session():
-    if st.session_state.result:
+    if st.session_state.result and not st.session_state.is_sample:
         try:
             delete_vector_store(st.session_state.result["transcript"])
         except Exception:
             pass
     st.session_state.result = None
     st.session_state.chat_history = []
+    st.session_state.is_sample = False
 
 
-# ---------- Pipeline runner ----------
+# ---------- Pipeline runner (real video) ----------
 def run_pipeline(source: str, language: str, progress_cb):
     is_url_source = source.startswith(("http://", "https://"))
 
@@ -202,6 +209,28 @@ def run_pipeline(source: str, language: str, progress_cb):
     }
 
 
+# ---------- Sample video loader (instant, no YouTube/LLM calls needed for text) ----------
+def load_sample_video(progress_cb):
+    progress_cb("Loading pre-processed sample...", 0.3)
+    with open(SAMPLE_VIDEO_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    progress_cb("Building chat index for sample...", 0.7)
+    rag_chain = build_rag_chain(data["transcript"])
+
+    progress_cb("Done!", 1.0)
+
+    return {
+        "title": data["title"],
+        "transcript": data["transcript"],
+        "summary": data["summary"],
+        "action_items": data["action_items"],
+        "key_decisions": data["key_decisions"],
+        "open_questions": data["open_questions"],
+        "rag_chain": rag_chain,
+    }
+
+
 # =====================================================================
 # HERO HEADER
 # =====================================================================
@@ -233,9 +262,34 @@ if st.session_state.result is None:
 
     uploaded_file = st.file_uploader("📁 ...or upload a local audio/video file", type=None)
 
-    process_clicked = st.button("▶  Process video", type="primary", use_container_width=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        process_clicked = st.button("▶  Process video", type="primary", use_container_width=True)
+    with col2:
+        sample_clicked = st.button("🎯 Try a sample (instant)", use_container_width=True)
+
+    st.caption(
+        "⚠️ Live YouTube downloads may occasionally fail due to YouTube's bot detection on "
+        "cloud servers — use **Try a sample** for a guaranteed instant demo."
+    )
 
     st.markdown('</div>', unsafe_allow_html=True)
+
+    if sample_clicked:
+        progress_bar = st.progress(0, text="Starting...")
+
+        def progress_cb(msg, pct):
+            progress_bar.progress(pct, text=msg)
+
+        try:
+            st.session_state.result = load_sample_video(progress_cb)
+            st.session_state.chat_history = []
+            st.session_state.is_sample = True
+            progress_bar.empty()
+            st.rerun()
+        except Exception as e:
+            progress_bar.empty()
+            st.error(f"Could not load sample: {e}")
 
     if process_clicked:
         if uploaded_file is None and not source.strip():
@@ -257,6 +311,7 @@ if st.session_state.result is None:
             try:
                 st.session_state.result = run_pipeline(input_source, language, progress_cb)
                 st.session_state.chat_history = []
+                st.session_state.is_sample = False
                 progress_bar.empty()
                 st.rerun()
             except Exception as e:
@@ -275,9 +330,10 @@ else:
 result = st.session_state.result
 
 if result:
+    badge_html = '<span class="badge sample-badge">🎯 Sample Demo</span>' if st.session_state.is_sample else '<span class="badge">🔴 Analyzed</span>'
     st.markdown(f"""
     <div class="result-title">
-        <span class="badge">🔴 Analyzed</span>
+        {badge_html}
         <h2>{result['title']}</h2>
     </div>
     """, unsafe_allow_html=True)
